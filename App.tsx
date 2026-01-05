@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { parseLotofacilCSV } from './utils/csvParser';
 import { calculateStatistics } from './utils/statistics';
@@ -19,7 +18,6 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Estados para busca com Debounce
   const [inputValue, setInputValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -32,16 +30,14 @@ const App: React.FC = () => {
       if (p) setSavedPredictions(JSON.parse(p));
       if (d) setDraws(JSON.parse(d));
     } catch (e) {
-      console.error("Erro ao carregar cache:", e);
+      console.warn("LotoExpert: Cache local não pôde ser carregado.");
     }
   }, []);
 
-  // Efeito de Debounce: Atualiza o searchQuery 300ms após a última digitação
   useEffect(() => {
     const handler = setTimeout(() => {
       setSearchQuery(inputValue);
-    }, 300);
-
+    }, 400);
     return () => clearTimeout(handler);
   }, [inputValue]);
 
@@ -74,10 +70,10 @@ const App: React.FC = () => {
       try {
         const text = e.target?.result as string;
         const parsed = await parseLotofacilCSV(text);
-        if (parsed.length === 0) throw new Error("CSV inválido.");
+        if (parsed.length === 0) throw new Error("O arquivo CSV parece estar vazio ou em formato incompatível.");
         setDraws(parsed);
       } catch (err: any) {
-        setError("Falha ao ler arquivo CSV. Verifique o formato.");
+        setError(err.message || "Falha ao ler arquivo CSV.");
       } finally { setLoading(false); }
     };
     reader.readAsText(file);
@@ -117,11 +113,11 @@ const App: React.FC = () => {
   }, [savedPredictions, parsedSearchNumbers]);
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-20">
-      <header className="bg-slate-900/50 backdrop-blur-xl border-b border-slate-800 sticky top-0 z-50">
+    <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-20 selection:bg-emerald-500/30">
+      <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
               <i className="fa-solid fa-clover text-white"></i>
             </div>
             <h1 className="text-lg font-black tracking-tighter">LotoExpert <span className="text-emerald-400 italic">AI</span></h1>
@@ -130,8 +126,9 @@ const App: React.FC = () => {
             <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" ref={fileInputRef} />
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg border border-slate-700 transition-all uppercase tracking-wider"
+              className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg border border-slate-700 transition-all uppercase tracking-wider active:scale-95"
             >
+              <i className="fa-solid fa-file-import mr-2"></i>
               Importar Dados
             </button>
           </div>
@@ -140,65 +137,39 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-3 animate-pulse">
-            <i className="fa-solid fa-circle-exclamation"></i>
-            {error}
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-3 animate-in fade-in duration-300">
+            <i className="fa-solid fa-circle-exclamation text-lg"></i>
+            <div>
+              <p className="font-bold uppercase mb-0.5">Erro Detectado</p>
+              <p className="opacity-80">{error}</p>
+            </div>
           </div>
         )}
 
         {draws.length === 0 && savedPredictions.length === 0 ? (
-          <div className="py-32 flex flex-col items-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-900/20">
-             <i className="fa-solid fa-database text-4xl text-slate-700 mb-4"></i>
-             <h2 className="text-xl font-bold text-white">Sem Dados Analíticos</h2>
-             <p className="text-slate-500 text-sm max-w-xs text-center mt-2">Carregue um arquivo CSV para começar a extrair padrões estatísticos.</p>
+          <div className="py-32 flex flex-col items-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-900/20 text-center px-6">
+             <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-6">
+                <i className="fa-solid fa-database text-3xl text-slate-600"></i>
+             </div>
+             <h2 className="text-xl font-bold text-white mb-2">Painel Analítico Vazio</h2>
+             <p className="text-slate-500 text-sm max-w-xs leading-relaxed">Carregue o arquivo histórico oficial da Caixa (.csv) para que a IA possa processar as tendências e probabilidades.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 space-y-8">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-9 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-9 gap-3">
                 {[
                   { l: 'Base Histórica', v: draws.length, i: 'fa-history', c: 'text-blue-400' },
                   { l: 'Média Soma', v: stats?.sumAvg.toFixed(0) || 0, i: 'fa-calculator', c: 'text-emerald-400' },
-                  { 
-                    l: 'Mediana Soma', 
-                    v: stats?.sumMedian.toFixed(0) || 0, 
-                    i: 'fa-arrows-left-right-to-line', 
-                    c: 'text-cyan-400',
-                    t: 'O valor central que divide a metade superior e inferior das somas. Menos sensível a valores extremos.'
-                  },
-                  { 
-                    l: 'Moda Soma', 
-                    v: stats?.sumMode?.slice(0, 1).join(', ') || '-', 
-                    i: 'fa-star', 
-                    c: 'text-purple-400',
-                    t: 'A soma que ocorre com maior frequência nos sorteios.'
-                  },
-                  { 
-                    l: 'Desvio Padrão', 
-                    v: stats?.sumStdDev.toFixed(1) || 0, 
-                    i: 'fa-wave-square', 
-                    c: 'text-rose-400',
-                    t: 'Indica a variação das somas em relação à média. Valores baixos indicam maior estabilidade.'
-                  },
-                  { 
-                    l: 'Probabilidade', 
-                    v: '1 em 3.26M', 
-                    i: 'fa-percent', 
-                    c: 'text-amber-500',
-                    t: 'Probabilidade teórica de acertar 15 números com uma aposta simples de 15 dezenas. Cálculo: C(25,15) = 25! / (15! * 10!) = 3.268.760 combinações únicas.'
-                  },
-                  { 
-                    l: 'Média Repetidos', 
-                    v: avgRepeats.toFixed(1), 
-                    i: 'fa-rotate-right', 
-                    c: 'text-orange-400',
-                    t: 'Média de dezenas que se repetem de um concurso para o outro. O padrão estatístico mais comum na Lotofácil é repetir de 8 a 10 dezenas.'
-                  },
+                  { l: 'Mediana Soma', v: stats?.sumMedian.toFixed(0) || 0, i: 'fa-arrows-left-right-to-line', c: 'text-cyan-400', t: 'Valor central das somas históricas.' },
+                  { l: 'Moda Soma', v: stats?.sumMode?.slice(0, 1).join(', ') || '-', i: 'fa-star', c: 'text-purple-400', t: 'Soma mais frequente.' },
+                  { l: 'Desvio Padrão', v: stats?.sumStdDev.toFixed(1) || 0, i: 'fa-wave-square', c: 'text-rose-400' },
+                  { l: 'Probabilidade', v: '1/3.26M', i: 'fa-percent', c: 'text-amber-500', t: 'Chances para 15 dezenas.' },
+                  { l: 'Média Repetidos', v: avgRepeats.toFixed(1), i: 'fa-rotate-right', c: 'text-orange-400' },
                   { l: 'Pares (Avg)', v: stats?.parity.even.toFixed(1) || 0, i: 'fa-equals', c: 'text-amber-400' },
                   { l: 'Ímpares (Avg)', v: stats?.parity.odd.toFixed(1) || 0, i: 'fa-not-equal', c: 'text-indigo-400' }
                 ].map((s, idx) => (
-                  <div key={idx} className="bg-slate-800/40 p-3 rounded-2xl border border-slate-800 flex flex-col justify-between relative min-h-[100px]">
+                  <div key={idx} className="bg-slate-800/40 p-3 rounded-2xl border border-slate-800 flex flex-col justify-between relative min-h-[100px] hover:border-slate-700 transition-colors">
                     <div className="flex items-start justify-between">
                       <i className={`fa-solid ${s.i} ${s.c} text-[10px] mb-2`}></i>
                       {s.t && <InfoTooltip text={s.t} />}
@@ -209,13 +180,11 @@ const App: React.FC = () => {
                 ))}
               </div>
 
-              {/* Charts */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {stats && <FrequencyChart data={stats.frequency} />}
                 {stats && <ParityChart parity={stats.parity} />}
               </div>
 
-              {/* Saved Section */}
               <section className="bg-slate-900/30 rounded-3xl p-6 border border-slate-800/50">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                   <div className="space-y-1">
@@ -223,61 +192,43 @@ const App: React.FC = () => {
                       <i className="fa-solid fa-folder-open text-indigo-400"></i>
                       Palpites Arquivados
                     </h3>
-                    <p className="text-[9px] text-slate-600 font-bold uppercase">Priorizando por relevância na busca</p>
                   </div>
-                  <div className="relative group">
-                    <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] group-focus-within:text-emerald-400 transition-colors"></i>
+                  <div className="relative">
+                    <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px]"></i>
                     <input 
                       type="text" 
-                      placeholder="Pesquisar por dezenas (ex: 01 07 22)..." 
-                      className="bg-slate-800 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-[10px] w-full sm:w-64 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder:text-slate-600 text-slate-200"
+                      placeholder="Filtrar por dezenas..." 
+                      className="bg-slate-800 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-[10px] w-full sm:w-64 focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
                       value={inputValue}
                       onChange={e => setInputValue(e.target.value)}
                     />
-                    {inputValue !== searchQuery && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <i className="fa-solid fa-circle-notch animate-spin text-slate-600 text-[10px]"></i>
-                      </div>
-                    )}
                   </div>
                 </div>
 
                 <div className="space-y-3">
                   {filteredSaved.length === 0 ? (
-                    <div className="py-12 text-center border border-dashed border-slate-800 rounded-2xl">
-                      <i className="fa-solid fa-filter-circle-xmark text-slate-700 text-2xl mb-2"></i>
-                      <p className="text-slate-500 text-[10px] font-bold uppercase">Nenhum palpite contém as dezenas pesquisadas.</p>
+                    <div className="py-12 text-center border border-dashed border-slate-800 rounded-2xl opacity-50">
+                      <p className="text-[10px] font-bold uppercase">Nenhum palpite arquivado encontrado.</p>
                     </div>
                   ) : (
                     filteredSaved.map(p => (
-                      <div key={p.id} className="bg-slate-800/20 border border-slate-800/50 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 transition-all hover:bg-slate-800/30">
-                        <div className="flex flex-wrap gap-1.5 flex-1 min-w-[280px]">
+                      <div key={p.id} className="bg-slate-800/20 border border-slate-800/50 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 transition-all hover:bg-slate-800/40">
+                        <div className="flex flex-wrap gap-1.5 flex-1">
                           {p.numbers.map(n => {
                             const isMatched = parsedSearchNumbers.includes(n);
                             return (
-                              <span 
-                                key={n} 
-                                className={`w-7 h-7 flex items-center justify-center rounded text-[10px] font-bold transition-all
-                                  ${isMatched 
-                                    ? 'bg-emerald-500/30 text-emerald-400 border border-emerald-500/60 shadow-[0_0_10px_rgba(16,185,129,0.3)] scale-110 z-10' 
-                                    : 'bg-slate-700/50 text-slate-400 border border-slate-700'}`}
-                              >
+                              <span key={n} className={`w-7 h-7 flex items-center justify-center rounded text-[10px] font-bold border transition-all ${isMatched ? 'bg-emerald-500/30 text-emerald-400 border-emerald-500/50 scale-110' : 'bg-slate-700/50 text-slate-400 border-slate-700'}`}>
                                 {n.toString().padStart(2, '0')}
                               </span>
                             );
                           })}
                         </div>
-                        <div className="flex items-center gap-4 border-l border-slate-800 pl-4">
-                          <div className="text-right flex flex-col gap-1 items-end">
-                            {p.matchCount > 0 && (
-                              <div className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase animate-in fade-in zoom-in duration-300">
-                                {p.matchCount} {p.matchCount === 1 ? 'acerto' : 'acertos'}
-                              </div>
-                            )}
-                            <div className="text-[9px] font-bold text-slate-500">{new Date(p.timestamp).toLocaleDateString()}</div>
-                            <div className="text-[10px] font-black text-emerald-400 uppercase">{(p.confidence * 100).toFixed(0)}% Conf.</div>
+                        <div className="flex items-center gap-4 pl-4 border-l border-slate-800">
+                          <div className="text-right">
+                            {p.matchCount > 0 && <span className="block text-[8px] font-black text-emerald-400 uppercase mb-1">{p.matchCount} acertos</span>}
+                            <div className="text-[10px] font-black text-emerald-400 uppercase">{(p.confidence * 100).toFixed(0)}%</div>
                           </div>
-                          <button onClick={() => setSavedPredictions(prev => prev.filter(x => x.id !== p.id))} className="text-slate-600 hover:text-red-400 transition-colors p-2">
+                          <button onClick={() => setSavedPredictions(prev => prev.filter(x => x.id !== p.id))} className="text-slate-600 hover:text-red-400 transition-colors">
                             <i className="fa-solid fa-trash-can"></i>
                           </button>
                         </div>
@@ -298,40 +249,27 @@ const App: React.FC = () => {
                 <button 
                   onClick={triggerPrediction}
                   disabled={loading || !stats}
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-20 text-white font-black rounded-2xl shadow-xl shadow-emerald-900/20 flex items-center justify-center gap-3 transition-all active:scale-95 mb-8 group"
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black rounded-2xl shadow-xl shadow-emerald-900/20 flex items-center justify-center gap-3 transition-all active:scale-95 mb-8"
                 >
-                  {loading ? <i className="fa-solid fa-circle-notch animate-spin"></i> : <i className="fa-solid fa-bolt-lightning group-hover:animate-bounce"></i>}
-                  {loading ? 'ANALISANDO...' : 'PROCESSAR PALPITE'}
+                  {loading ? <i className="fa-solid fa-circle-notch animate-spin"></i> : <i className="fa-solid fa-bolt-lightning"></i>}
+                  {loading ? 'PROCESSANDO...' : 'GERAR PALPITE'}
                 </button>
 
                 {prediction && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-500">
                     <div className="grid grid-cols-5 gap-2">
                       {prediction.numbers.map(n => <NumberBall key={n} number={n} highlighted size="sm" />)}
                     </div>
-                    
                     <div className="p-4 bg-black/20 rounded-2xl border border-white/5">
-                       <div className="text-[9px] font-bold text-slate-500 uppercase mb-2">Insight de Análise:</div>
                        <p className="text-[11px] text-slate-400 italic leading-relaxed">"{prediction.reasoning}"</p>
                     </div>
-
                     <button 
-                      onClick={() => {
-                        if (!savedPredictions.find(x => x.id === (prediction as any).id)) {
-                          setSavedPredictions(prev => [prediction as any, ...prev]);
-                        }
-                      }}
+                      onClick={() => setSavedPredictions(prev => [prediction as any, ...prev])}
                       className="w-full py-3 border border-slate-700 text-slate-400 hover:text-white hover:border-slate-500 text-[10px] font-black rounded-xl transition-all"
                     >
-                      ARQUIVAR ESTA PREDIÇÃO
+                      ARQUIVAR PALPITE
                     </button>
                   </div>
-                )}
-
-                {!stats && !loading && (
-                   <div className="text-center p-6 border border-slate-800 rounded-2xl">
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">Importe os dados históricos para desbloquear a análise preditiva por IA.</p>
-                   </div>
                 )}
               </div>
             </div>

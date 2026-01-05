@@ -1,91 +1,76 @@
+import { GoogleGenAI, Type } from "@google/genai";
 import { Statistics, PredictionResult } from "../types";
 
 /**
- * Motor Preditivo baseado na APIFreeLLM.
- * Realiza uma análise estatística avançada para gerar palpites da Lotofácil.
+ * Motor Preditivo baseado no SDK oficial do Google Gemini.
+ * Utiliza o modelo Gemini 3 Flash para análise estatística e geração de palpites.
  */
 export const getSmartPrediction = async (stats: Statistics, recentGames: number[][]): Promise<PredictionResult> => {
-  const url = 'https://apifreellm.com/api/chat';
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   
   const topTen = Object.entries(stats.frequency)
     .map(([num, count]) => ({ n: parseInt(num), c: count }))
     .sort((a, b) => b.c - a.c)
     .slice(0, 10);
 
-  // Média de repetições do histórico para o prompt
   const avgRepeats = stats.repeatsFromPrevious.length > 0 
     ? (stats.repeatsFromPrevious.reduce((a, b) => a + b, 0) / stats.repeatsFromPrevious.length).toFixed(1)
     : "9";
 
-  // Prompt aprimorado com toda a base estatística calculada
-  const prompt = `Atue como um especialista em análise estatística e probabilística da Lotofácil.
-Analise os seguintes padrões históricos:
-- Frequência (Top 10): ${topTen.map(f => f.n).join(', ')}
-- Equilíbrio Par/Ímpar: Médias de ${stats.parity.even.toFixed(1)} pares e ${stats.parity.odd.toFixed(1)} ímpares.
-- Tendência de Soma: Média ${stats.sumAvg.toFixed(1)}, Mediana ${stats.sumMedian.toFixed(1)}, Moda ${stats.sumMode.join('/')}.
-- Volatilidade (Desvio Padrão): ${stats.sumStdDev.toFixed(2)}.
-- Números Primos: Distribuição de ocorrências ${JSON.stringify(stats.primeCount)}.
-- Ciclo de Repetição: Média de ${avgRepeats} dezenas repetidas do concurso anterior.
-- Últimos sorteios: ${JSON.stringify(recentGames.slice(-2))}.
+  const prompt = `Como um especialista em estatística da Lotofácil, analise estes dados e gere um palpite otimizado:
+    - Dezenas frequentes: ${topTen.map(f => f.n).join(', ')}
+    - Equilíbrio Par/Ímpar: ${stats.parity.even.toFixed(1)} pares / ${stats.parity.odd.toFixed(1)} ímpares.
+    - Tendência de Soma: Média ${stats.sumAvg.toFixed(0)}
+    - Média de repetições do concurso anterior: ${avgRepeats}
+    - Últimos jogos: ${JSON.stringify(recentGames.slice(-2))}
 
-Tarefa: Gere um palpite de exatamente 15 dezenas únicas (entre 01 e 25).
-Retorne EXCLUSIVAMENTE um objeto JSON no formato abaixo, sem comentários ou explicações externas:
-{
-  "numbers": [15 números ordenados],
-  "reasoning": "breve justificativa técnica baseada nos padrões",
-  "confidence": 0.90
-}`;
+    Gere EXATAMENTE 15 números únicos entre 1 e 25.`;
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      },
-      body: JSON.stringify({ message: prompt })
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            numbers: {
+              type: Type.ARRAY,
+              items: { type: Type.INTEGER },
+              description: "Array com exatamente 15 números únicos entre 1 e 25."
+            },
+            reasoning: {
+              type: Type.STRING,
+              description: "Breve explicação técnica do palpite."
+            },
+            confidence: {
+              type: Type.NUMBER,
+              description: "Nível de confiança estatística de 0 a 1."
+            }
+          },
+          required: ["numbers", "reasoning", "confidence"]
+        }
+      }
     });
 
-    if (!response.ok) {
-      if (response.status === 429) throw new Error("Limite de requisições excedido. Tente novamente em breve.");
-      if (response.status === 403) throw new Error("Acesso negado pelo firewall. Verifique sua conexão ou tente mais tarde.");
-      throw new Error(`Erro na API (${response.status}): Falha ao conectar com o motor de IA.`);
-    }
+    const result = JSON.parse(response.text || "{}");
 
-    const data = await response.json();
-    const rawContent = data.response || data.message || "";
+    // Validação de segurança dos dados recebidos
+    const numbers = [...new Set((result.numbers as number[] || []))].sort((a, b) => a - b);
     
-    if (!rawContent) {
-      throw new Error("O servidor de IA retornou uma resposta vazia.");
-    }
-
-    // Extração segura do JSON para lidar com possíveis textos extras da IA
-    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Não foi possível processar o formato de dados retornado pela IA.");
-    }
-
-    const result = JSON.parse(jsonMatch[0]);
-
-    // Validação de integridade do palpite (Regras Lotofácil)
-    const rawNumbers: any[] = Array.isArray(result.numbers) ? result.numbers : [];
-    const processedNumbers: number[] = [...new Set(rawNumbers.map(n => Number(n)))]
-      .filter((n: number) => !isNaN(n) && Number.isInteger(n) && n >= 1 && n <= 25)
-      .sort((a: number, b: number) => a - b);
-
-    if (processedNumbers.length !== 15) {
-      throw new Error(`IA gerou ${processedNumbers.length} dezenas. O palpite deve conter exatamente 15.`);
+    if (numbers.length !== 15 || numbers.some(n => n < 1 || n > 25)) {
+      throw new Error("O motor de IA gerou um conjunto de dezenas inválido para as regras da Lotofácil.");
     }
 
     return {
-      numbers: processedNumbers,
-      reasoning: result.reasoning || "Análise baseada em tendências de soma e frequência histórica.",
-      confidence: typeof result.confidence === 'number' ? result.confidence : 0.85
+      numbers,
+      reasoning: result.reasoning || "Análise baseada em frequência e paridade histórica.",
+      confidence: result.confidence || 0.8
     };
 
   } catch (error: any) {
-    console.error("Erro no AI Service:", error);
-    throw error instanceof Error ? error : new Error("Erro inesperado na geração do palpite.");
+    console.error("Erro no Gemini Service:", error);
+    throw new Error("Falha ao processar análise inteligente. Verifique sua conexão ou tente novamente.");
   }
 };
