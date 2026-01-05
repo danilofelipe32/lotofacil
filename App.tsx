@@ -18,7 +18,6 @@ const App: React.FC = () => {
   const [draws, setDraws] = useState<LotofacilDraw[]>([]);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [savedPredictions, setSavedPredictions] = useState<SavedPrediction[]>([]);
-  const [recentHistory, setRecentHistory] = useState<SavedPrediction[]>([]);
   const [sessionExclusionList, setSessionExclusionList] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,19 +30,10 @@ const App: React.FC = () => {
     const storedDraws = localStorage.getItem(STORAGE_KEY_DRAWS);
 
     if (storedPredictions) {
-      try {
-        setSavedPredictions(JSON.parse(storedPredictions));
-      } catch (e) {
-        console.error("Erro ao carregar palpites do localStorage", e);
-      }
+      try { setSavedPredictions(JSON.parse(storedPredictions)); } catch (e) { console.error(e); }
     }
-
     if (storedDraws) {
-      try {
-        setDraws(JSON.parse(storedDraws));
-      } catch (e) {
-        console.error("Erro ao carregar histórico de jogos do localStorage", e);
-      }
+      try { setDraws(JSON.parse(storedDraws)); } catch (e) { console.error(e); }
     }
   }, []);
 
@@ -52,9 +42,7 @@ const App: React.FC = () => {
   }, [savedPredictions]);
 
   useEffect(() => {
-    if (draws.length > 0) {
-      localStorage.setItem(STORAGE_KEY_DRAWS, JSON.stringify(draws));
-    }
+    if (draws.length > 0) localStorage.setItem(STORAGE_KEY_DRAWS, JSON.stringify(draws));
   }, [draws]);
 
   const combinedDraws = useMemo(() => {
@@ -74,7 +62,6 @@ const App: React.FC = () => {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setError(null);
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -82,409 +69,282 @@ const App: React.FC = () => {
       try {
         const text = e.target?.result as string;
         const parsed = await parseLotofacilCSV(text);
-        if (parsed.length === 0) {
-          throw new Error("Nenhum dado válido encontrado no CSV. Verifique o formato.");
-        }
+        if (parsed.length === 0) throw new Error("CSV inválido.");
         setDraws(parsed);
-        setSessionExclusionList([]);
-        setRecentHistory([]);
       } catch (err: any) {
-        setError(err.message || "Erro ao ler arquivo.");
-      } finally {
-        setLoading(false);
-      }
+        setError(err.message || "Erro ao carregar arquivo.");
+      } finally { setLoading(false); }
     };
     reader.readAsText(file);
   };
 
   const clearHistory = () => {
-    if (window.confirm("Tem certeza que deseja limpar o histórico de jogos carregado?")) {
+    if (window.confirm("Limpar todo o histórico carregado?")) {
       setDraws([]);
       localStorage.removeItem(STORAGE_KEY_DRAWS);
     }
-  };
-
-  const isGameRepeated = (numbers: number[]): boolean => {
-    const comboKey = [...numbers].sort((a, b) => a - b).join(',');
-    const existsInHistory = draws.some(d => d.numbers.sort((a, b) => a - b).join(',') === comboKey);
-    if (existsInHistory) return true;
-    const existsInSession = sessionExclusionList.includes(comboKey);
-    if (existsInSession) return true;
-    return false;
   };
 
   const generatePalpite = async (retryCount = 0) => {
     if (!stats) return;
     if (retryCount === 0) setLoading(true);
     setError(null);
-
     try {
       const recent = draws.length > 0 ? draws.slice(-10).map(d => d.numbers) : [];
       const result = await getSmartPrediction(stats, recent);
-
-      if (isGameRepeated(result.numbers)) {
-        if (retryCount < 2) {
-          return generatePalpite(retryCount + 1);
-        } else {
-          throw new Error("A IA gerou um jogo já existente. Tente novamente.");
-        }
-      }
-
       const comboKey = result.numbers.sort((a, b) => a - b).join(',');
-      setSessionExclusionList(prev => [...prev, comboKey]);
       
-      const newPrediction: SavedPrediction = {
-        ...result,
-        id: crypto.randomUUID(),
-        timestamp: Date.now()
-      };
-
-      setPrediction(newPrediction);
-      setRecentHistory(prev => [newPrediction, ...prev].slice(0, 5));
-    } catch (err: any) {
-      setError(err.message || "Falha ao gerar palpite.");
-    } finally {
-      if (retryCount === 0) setLoading(false);
-    }
-  };
-
-  const savePrediction = (pred: SavedPrediction) => {
-    if (savedPredictions.find(p => p.id === pred.id)) return;
-    setSavedPredictions(prev => [pred, ...prev]);
-  };
-
-  const deleteSavedPrediction = (id: string) => {
-    setSavedPredictions(prev => prev.filter(p => p.id !== id));
-  };
-
-  const formatDate = (ts: number) => {
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit', month: '2-digit', year: '2-digit',
-      hour: '2-digit', minute: '2-digit'
-    }).format(ts);
-  };
-
-  const calculateSum = (numbers: number[]) => numbers.reduce((acc, curr) => acc + curr, 0);
-  const getParity = (numbers: number[]) => {
-    const even = numbers.filter(n => n % 2 === 0).length;
-    return { even, odd: 15 - even };
-  };
-
-  const convergenceScore = useMemo(() => {
-    if (!prediction || !draws.length) return 0;
-    const pSum = calculateSum(prediction.numbers);
-    const pParity = getParity(prediction.numbers);
-
-    const matchingProfile = draws.filter(d => {
-      const dSum = calculateSum(d.numbers);
-      const dParity = getParity(d.numbers);
-      const sumMatch = Math.abs(dSum - pSum) <= 15;
-      const parityMatch = dParity.even === pParity.even;
-      return sumMatch && parityMatch;
-    });
-
-    return (matchingProfile.length / (draws.length || 1)) * 100;
-  }, [prediction, draws]);
-
-  const sortedAndFilteredPredictions = useMemo(() => {
-    let list = [...savedPredictions];
-
-    if (searchQuery.trim()) {
-      const queryNumbers = searchQuery
-        .split(/[\s,]+/)
-        .map(n => parseInt(n.trim()))
-        .filter(n => !isNaN(n));
-      
-      if (queryNumbers.length > 0) {
-        list = list.filter(p => 
-          queryNumbers.every(qn => p.numbers.includes(qn))
-        );
+      if (draws.some(d => d.numbers.sort((a, b) => a - b).join(',') === comboKey) && retryCount < 2) {
+        return generatePalpite(retryCount + 1);
       }
-    }
 
-    switch (sortBy) {
-      case 'date_desc': return list.sort((a, b) => b.timestamp - a.timestamp);
-      case 'date_asc': return list.sort((a, b) => a.timestamp - b.timestamp);
-      case 'confidence': return list.sort((a, b) => b.confidence - a.confidence);
-      case 'sum_desc': return list.sort((a, b) => calculateSum(b.numbers) - calculateSum(a.numbers));
-      case 'sum_asc': return list.sort((a, b) => calculateSum(a.numbers) - calculateSum(b.numbers));
-      default: return list;
+      setPrediction({ ...result, id: crypto.randomUUID(), timestamp: Date.now() } as any);
+    } catch (err: any) {
+      setError(err.message);
+    } finally { if (retryCount === 0) setLoading(false); }
+  };
+
+  const sortedPredictions = useMemo(() => {
+    let list = [...savedPredictions];
+    if (searchQuery) {
+      const q = searchQuery.split(/[\s,]+/).map(n => parseInt(n)).filter(n => !isNaN(n));
+      list = list.filter(p => q.every(qn => p.numbers.includes(qn)));
     }
+    return list.sort((a, b) => {
+      if (sortBy === 'date_desc') return b.timestamp - a.timestamp;
+      if (sortBy === 'confidence') return b.confidence - a.confidence;
+      if (sortBy === 'sum_desc') return b.numbers.reduce((s,v)=>s+v,0) - a.numbers.reduce((s,v)=>s+v,0);
+      return 0;
+    });
   }, [savedPredictions, sortBy, searchQuery]);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 pb-24">
-      <header className="flex flex-col md:flex-row justify-between items-center gap-6 mb-12 border-b border-gray-800 pb-8">
-        <div className="flex items-center gap-4">
-          <div className="bg-emerald-500 p-3 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-            <i className="fa-solid fa-clover text-3xl text-white"></i>
+    <div className="min-h-screen bg-[#0f172a] text-slate-200 selection:bg-emerald-500/30">
+      {/* Header Fixo/Glass */}
+      <nav className="sticky top-0 z-50 bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <i className="fa-solid fa-clover text-white text-xl"></i>
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-white tracking-tight">LotoExpert <span className="text-emerald-400">AI</span></h1>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Analytics Dashboard</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-              LotoExpert AI
-            </h1>
-            <p className="text-gray-400 text-sm">Análise Estatística & API Free LLM</p>
-          </div>
-        </div>
-
-        <div className="flex gap-4">
-          <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" ref={fileInputRef} />
-          {draws.length > 0 && (
-            <button onClick={clearHistory} className="flex items-center gap-2 px-4 py-3 bg-red-900/20 hover:bg-red-900/40 text-red-400 rounded-xl transition-all border border-red-500/30 text-sm font-bold">
-              <i className="fa-solid fa-trash-can"></i>
-              Limpar Dados
+          
+          <div className="flex items-center gap-3">
+            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" ref={fileInputRef} />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+            >
+              <i className="fa-solid fa-cloud-arrow-up text-emerald-400"></i>
+              Importar CSV
             </button>
-          )}
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-6 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-xl transition-all border border-gray-700 font-bold">
-            <i className="fa-solid fa-file-csv text-emerald-400"></i>
-            {draws.length > 0 ? 'Atualizar CSV' : 'Carregar Histórico CSV'}
-          </button>
-        </div>
-      </header>
-
-      {error && (
-        <div className="mb-8 p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200 flex items-center gap-3">
-          <i className="fa-solid fa-circle-exclamation text-red-400"></i>
-          {error}
-        </div>
-      )}
-
-      {draws.length === 0 && savedPredictions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
-          <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center animate-pulse">
-            <i className="fa-solid fa-arrow-up text-4xl text-gray-600"></i>
-          </div>
-          <div className="max-w-md">
-            <h2 className="text-2xl font-bold mb-2">Pronto para começar?</h2>
-            <p className="text-gray-400">O histórico será salvo localmente. Carregue um CSV da Lotofácil para análise e geração de jogos inéditos.</p>
+            {draws.length > 0 && (
+              <button onClick={clearHistory} className="p-2 text-slate-500 hover:text-red-400 transition-colors">
+                <i className="fa-solid fa-trash-can"></i>
+              </button>
+            )}
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700">
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Total Analisado
-                  <InfoTooltip text="Total de concursos processados (CSV) somados aos palpites salvos por você." />
-                </span>
-                <div className="text-2xl font-black mt-1">
-                  {combinedDraws.length} <span className="text-xs font-normal text-gray-500">jogos</span>
-                </div>
-              </div>
-              <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700">
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Média de Soma
-                  <InfoTooltip text="Média aritmética da soma das dezenas de cada sorteio. Historicamente, a maioria dos jogos gira entre 170 e 220." />
-                </span>
-                <div className="text-2xl font-black mt-1 text-emerald-400">{stats?.sumAvg.toFixed(1)}</div>
-              </div>
-              <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700">
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Pares / Ímpares
-                  <InfoTooltip text="Distribuição média de dezenas pares e ímpares. O equilíbrio ideal costuma ser de 7 ou 8 números de cada categoria." />
-                </span>
-                <div className="text-2xl font-black mt-1">
-                  <span className="text-amber-400">{stats?.parity.even.toFixed(1)}</span>
-                  <span className="text-gray-600 mx-1">/</span>
-                  <span className="text-blue-500">{stats?.parity.odd.toFixed(1)}</span>
-                </div>
-              </div>
-              <div className={`p-5 rounded-2xl border ${stats?.duplicates.length ? 'bg-red-900/20 border-red-500/50' : 'bg-gray-800/50 border-gray-700'}`}>
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Planilha: Repetidos
-                  <InfoTooltip text="Indica se existem combinações de 15 dezenas idênticas nos dados. Repetições na Lotofácil são extremamente raras." />
-                </span>
-                <div className={`text-2xl font-black mt-1 ${stats?.duplicates.length ? 'text-red-400' : 'text-emerald-400'}`}>
-                  {stats?.duplicates.length || 0}
-                </div>
-              </div>
-            </div>
+      </nav>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700">
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Desvio Padrão
-                  <InfoTooltip text="Mede a dispersão das somas em relação à média. Um desvio alto indica que as somas variam muito entre sorteios." />
-                </span>
-                <div className="text-2xl font-black mt-1 text-cyan-400">{stats?.sumStdDev.toFixed(2)}</div>
-              </div>
-              <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700">
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Mediana (Soma)
-                  <InfoTooltip text="O valor central das somas quando listadas em ordem. Serve para validar a tendência central sem influência de valores extremos." />
-                </span>
-                <div className="text-2xl font-black mt-1 text-indigo-400">{stats?.sumMedian}</div>
-              </div>
-              <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700">
-                <span className="text-gray-400 text-xs uppercase tracking-wider font-bold">
-                  Moda (Soma)
-                  <InfoTooltip text="A soma que ocorreu mais vezes nos resultados analisados." />
-                </span>
-                <div className="text-2xl font-black mt-1 text-amber-400">
-                  {stats?.sumMode.join(', ')}
-                </div>
-              </div>
-            </div>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {error && (
+          <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <i className="fa-solid fa-triangle-exclamation"></i>
+            {error}
+          </div>
+        )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {stats && <FrequencyChart data={stats.frequency} />}
-              {stats && <ParityChart parity={stats.parity} />}
+        {combinedDraws.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-32 text-center">
+            <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-6 border border-slate-700">
+              <i className="fa-solid fa-database text-3xl text-slate-600"></i>
             </div>
-
-            {savedPredictions.length > 0 && (
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-800 pb-4">
-                  <h3 className="font-black text-xl flex items-center gap-2 text-gray-200">
-                    <i className="fa-solid fa-bookmark text-indigo-400"></i>
-                    Palpites Salvos
-                    <InfoTooltip text="Jogos gerados que você decidiu arquivar." />
-                  </h3>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <div className="relative w-full sm:w-48">
-                      <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
-                      <input 
-                        type="text" 
-                        placeholder="Filtrar dezenas..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg pl-9 pr-3 py-2 outline-none hover:border-indigo-500 focus:border-indigo-500 transition-colors"
-                      />
+            <h2 className="text-2xl font-bold text-white mb-2">Inicie sua Análise</h2>
+            <p className="text-slate-500 max-w-sm">Carregue o arquivo de resultados da Lotofácil para que nossa IA identifique os melhores padrões estatísticos.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Coluna Esquerda: Insights e Histórico */}
+            <div className="lg:col-span-8 space-y-8">
+              
+              {/* Grid de Estatísticas Rápidas */}
+              <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Jogos Analisados', val: combinedDraws.length, icon: 'fa-list-ol', color: 'text-blue-400' },
+                  { label: 'Média de Soma', val: stats?.sumAvg.toFixed(1), icon: 'fa-plus-minus', color: 'text-emerald-400' },
+                  { label: 'Pares/Ímpares', val: `${stats?.parity.even.toFixed(1)} / ${stats?.parity.odd.toFixed(1)}`, icon: 'fa-scale-unbalanced', color: 'text-amber-400' },
+                  { label: 'Soma Mediana', val: stats?.sumMedian, icon: 'fa-bullseye', color: 'text-indigo-400' }
+                ].map((item, i) => (
+                  <div key={i} className="bg-slate-800/30 border border-slate-800 p-4 rounded-2xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <i className={`fa-solid ${item.icon} ${item.color} text-sm opacity-80`}></i>
+                      <InfoTooltip text={`Métrica baseada no histórico de ${combinedDraws.length} sorteios.`} />
                     </div>
-                    <select 
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as SortCriterion)}
-                      className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-3 py-2 outline-none hover:border-indigo-500 transition-colors cursor-pointer"
-                    >
-                      <option value="date_desc">Mais Recentes</option>
-                      <option value="confidence">Maior Confiança</option>
-                      <option value="sum_desc">Maior Soma</option>
-                      <option value="sum_asc">Menor Soma</option>
-                    </select>
+                    <div className="text-lg font-black text-white">{item.val}</div>
+                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{item.label}</div>
+                  </div>
+                ))}
+              </section>
+
+              {/* Gráficos em Grid */}
+              <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {stats && <FrequencyChart data={stats.frequency} />}
+                {stats && <ParityChart parity={stats.parity} />}
+              </section>
+
+              {/* Lista de Palpites Salvos */}
+              <section className="space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                    <i className="fa-solid fa-bookmark text-indigo-400"></i>
+                    Meus Jogos Salvos
+                  </h3>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Filtrar números..." 
+                      className="bg-slate-800 border-none rounded-lg px-3 py-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500 w-32 md:w-48 transition-all"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                    />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4">
-                  {sortedAndFilteredPredictions.map((saved) => (
-                    <div key={saved.id} className="bg-indigo-900/10 p-5 rounded-2xl border border-indigo-500/30 group hover:border-indigo-400 hover:bg-indigo-900/20 transition-all duration-300">
-                      <div className="flex flex-col gap-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-black text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/20 uppercase tracking-tighter">
-                              {formatDate(saved.timestamp)}
-                            </span>
-                            <span className="text-[10px] bg-amber-500/10 text-amber-500 px-2.5 py-1 rounded border border-amber-500/20 font-bold">
-                              SOMA: {calculateSum(saved.numbers)}
-                            </span>
-                            <span className="text-[10px] bg-cyan-500/10 text-cyan-400 px-2.5 py-1 rounded border border-cyan-500/20 font-bold">
-                              CONF.: {(saved.confidence * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                          
-                          <button 
-                            onClick={() => deleteSavedPrediction(saved.id)} 
-                            className="text-gray-500 hover:text-red-400 transition-colors p-1"
-                            title="Remover"
-                          >
-                            <i className="fa-solid fa-trash-can text-sm"></i>
-                          </button>
-                        </div>
-
-                        <div className="flex flex-wrap gap-1.5 justify-center sm:justify-start">
+                <div className="grid grid-cols-1 gap-3">
+                  {sortedPredictions.map((saved) => (
+                    <div key={saved.id} className="group bg-slate-800/20 hover:bg-slate-800/40 border border-slate-800 hover:border-indigo-500/30 p-4 rounded-2xl transition-all duration-300">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex flex-wrap gap-1.5">
                           {saved.numbers.map(n => (
-                            <div key={`${saved.id}-${n}`} className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 flex items-center justify-center text-xs font-bold">
+                            <div key={n} className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 flex items-center justify-center text-xs font-bold">
                               {n.toString().padStart(2, '0')}
                             </div>
                           ))}
                         </div>
-
-                        {saved.reasoning && (
-                           <p className="text-[11px] text-gray-400 italic border-t border-indigo-500/10 pt-2 leading-relaxed">
-                             "{saved.reasoning}"
-                           </p>
-                        )}
+                        <div className="flex items-center gap-4 border-t md:border-t-0 md:border-l border-slate-700 pt-3 md:pt-0 md:pl-4">
+                          <div className="text-right">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">{new Date(saved.timestamp).toLocaleDateString()}</div>
+                            <div className="text-xs font-black text-indigo-400">CONF: {(saved.confidence * 100).toFixed(0)}%</div>
+                          </div>
+                          <button 
+                            onClick={() => setSavedPredictions(p => p.filter(x => x.id !== saved.id))}
+                            className="p-2 text-slate-600 hover:text-red-400 transition-colors"
+                          >
+                            <i className="fa-solid fa-trash-can text-sm"></i>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
+                  {sortedPredictions.length === 0 && (
+                    <div className="py-12 text-center border-2 border-dashed border-slate-800 rounded-3xl">
+                      <p className="text-slate-600 text-sm">Nenhum palpite arquivado ainda.</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            {/* Coluna Direita: Gerador e Ações Rápidas */}
+            <div className="lg:col-span-4">
+              <div className="sticky top-28 space-y-6">
+                
+                {/* Card Principal do Gerador */}
+                <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-emerald-500/20 p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:rotate-12 transition-transform duration-700">
+                    <i className="fa-solid fa-microchip text-8xl text-emerald-500"></i>
+                  </div>
+
+                  <h2 className="text-xl font-black text-white mb-6 flex items-center gap-3">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                    Gerador Inteligente
+                  </h2>
+
+                  <button 
+                    onClick={() => generatePalpite()}
+                    disabled={loading}
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black rounded-2xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                  >
+                    {loading ? <i className="fa-solid fa-circle-notch animate-spin"></i> : <i className="fa-solid fa-bolt-lightning"></i>}
+                    {loading ? 'ANALISANDO PADRÕES...' : 'CRIAR NOVO JOGO'}
+                  </button>
+
+                  {prediction && (
+                    <div className="mt-8 space-y-6 animate-in zoom-in-95 duration-500">
+                      <div className="grid grid-cols-5 gap-2 justify-items-center">
+                        {prediction.numbers.map(n => <NumberBall key={n} number={n} highlighted size="sm" />)}
+                      </div>
+
+                      <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                            <i className="fa-solid fa-magnifying-glass-chart text-emerald-500"></i>
+                            Análise da IA
+                          </span>
+                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-black rounded-md border border-emerald-500/20">
+                            SCORE: {(prediction.confidence * 100).toFixed(0)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed italic">"{prediction.reasoning}"</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                          <span className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Matemática</span>
+                          <span className="text-xs font-black text-slate-200">1 em 3.2M</span>
+                          <InfoTooltip text="Probabilidade estatística de acerto das 15 dezenas." />
+                        </div>
+                        <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                          <span className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Tendência</span>
+                          <span className="text-xs font-black text-emerald-400">ALTA</span>
+                          <InfoTooltip text="Nível de aderência aos padrões de soma e paridade do histórico." />
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => {
+                          if (!savedPredictions.find(p => p.id === (prediction as any).id)) {
+                            setSavedPredictions(prev => [prediction as any, ...prev]);
+                          }
+                        }}
+                        disabled={savedPredictions.some(p => p.id === (prediction as any).id)}
+                        className="w-full py-3 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-400 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2"
+                      >
+                        <i className="fa-solid fa-bookmark"></i>
+                        {savedPredictions.some(p => p.id === (prediction as any).id) ? 'PALPITE SALVO' : 'ARQUIVAR PALPITE'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Lateral */}
+                <div className="p-4 rounded-2xl border border-slate-800 bg-slate-800/10">
+                  <p className="text-[10px] text-slate-500 leading-relaxed text-center">
+                    Utilizando modelos de análise probabilística via <span className="text-slate-300">APIFreeLLM</span>. 
+                    Jogue com responsabilidade.
+                  </p>
                 </div>
               </div>
-            )}
-          </div>
-
-          <div className="space-y-8">
-            <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-8 rounded-3xl border border-emerald-500/30 shadow-2xl sticky top-8">
-              <h2 className="text-2xl font-black mb-6 flex items-center gap-3 text-gray-100">
-                <i className="fa-solid fa-wand-magic-sparkles text-emerald-400"></i>
-                Gerador AI
-                <InfoTooltip text="Algoritmo que utiliza a API Free LLM para analisar o histórico e sugerir dezenas inéditas." />
-              </h2>
-              
-              <button 
-                onClick={() => generatePalpite()} 
-                disabled={loading || (draws.length === 0 && savedPredictions.length === 0)} 
-                className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${loading ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-emerald-600 hover:bg-emerald-500 hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] text-white disabled:opacity-30 disabled:cursor-not-allowed'}`}
-              >
-                {loading ? <><i className="fa-solid fa-spinner animate-spin"></i> Analisando...</> : <><i className="fa-solid fa-bolt"></i> Gerar Novo Palpite</>}
-              </button>
-              
-              {prediction && (
-                <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="flex items-center gap-2 text-emerald-400 text-[10px] font-black bg-emerald-400/10 px-3 py-1.5 rounded-full border border-emerald-400/20 uppercase">
-                      <i className="fa-solid fa-shield-check"></i>
-                      Sugestão Inédita
-                    </div>
-                    <div className="flex flex-wrap justify-center gap-1.5 p-4 bg-black/40 rounded-3xl border border-gray-700/50">
-                      {prediction.numbers.map(n => <NumberBall key={n} number={n} highlighted size="sm" />)}
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-900/50 p-5 rounded-2xl border border-gray-700 space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-500 uppercase flex items-center gap-2">
-                      <i className="fa-solid fa-bullseye text-cyan-400"></i>
-                      Indicadores Técnicos
-                      <InfoTooltip text="Métricas calculadas para avaliar a qualidade probabilística do jogo sugerido." />
-                    </h4>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-black/20 p-3 rounded-xl">
-                        <span className="text-[9px] text-gray-500 block uppercase font-bold">
-                          Matemática
-                          <InfoTooltip text="Probabilidade estatística fixa de acerto das 15 dezenas (1 em 3.268.760)." />
-                        </span>
-                        <span className="text-xs font-bold text-gray-300">1 em 3.2M</span>
-                      </div>
-                      <div className="bg-black/20 p-3 rounded-xl">
-                        <span className="text-[9px] text-gray-500 block uppercase font-bold">
-                          Convergência
-                          <InfoTooltip text="O quanto este palpite se alinha aos padrões estatísticos recorrentes (Soma e Paridade) identificados no histórico." />
-                        </span>
-                        <span className={`text-xs font-bold ${convergenceScore > 20 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          {convergenceScore.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <button 
-                    onClick={() => savePrediction(prediction as SavedPrediction)} 
-                    disabled={savedPredictions.some(p => p.id === (prediction as SavedPrediction).id)}
-                    className="w-full py-4 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-600 rounded-2xl text-sm font-black text-gray-200 flex items-center justify-center gap-2 transition-all"
-                  >
-                    <i className="fa-solid fa-floppy-disk text-emerald-400"></i>
-                    {savedPredictions.some(p => p.id === (prediction as SavedPrediction).id) ? 'Palpite já Arquivado' : 'Salvar no Histórico'}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
+        )}
+      </main>
+
+      {/* Footer Minimalista */}
+      <footer className="mt-20 py-10 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest">© 2024 LotoExpert AI Analytics</p>
+          <div className="flex gap-6">
+            <a href="#" className="text-slate-600 hover:text-slate-400 text-sm transition-colors"><i className="fa-brands fa-github"></i></a>
+            <a href="#" className="text-slate-600 hover:text-slate-400 text-sm transition-colors"><i className="fa-brands fa-x-twitter"></i></a>
+          </div>
         </div>
-      )}
-      <footer className="mt-20 border-t border-gray-800 pt-10 text-center text-gray-600 text-xs">
-        <p className="max-w-md mx-auto leading-relaxed">
-          LotoExpert AI - Utilizando API Free LLM para análise probabilística. 
-          Resultados passados não garantem ganhos. Jogue com responsabilidade.
-        </p>
       </footer>
     </div>
   );
