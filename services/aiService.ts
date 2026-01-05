@@ -33,6 +33,8 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        // Nota: O header User-Agent é restrito em navegadores modernos por segurança.
+        // Adicionamos conforme solicitado para mitigar bloqueios em ambientes compatíveis.
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
       body: JSON.stringify({ message: prompt })
@@ -47,7 +49,7 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
         throw new Error("O servidor de IA está enfrentando instabilidades temporárias (Erro 5xx). Tente novamente em alguns minutos.");
       }
       if (response.status === 403 || response.status === 401) {
-        throw new Error("Acesso negado pelo firewall ou autenticação. A API pode estar protegida contra bots.");
+        throw new Error("Acesso negado (403). O serviço de IA pode estar bloqueando a requisição via firewall ou Cloudflare.");
       }
       if (response.status === 404) {
         throw new Error("Serviço de IA temporariamente indisponível (Endpoint não encontrado).");
@@ -100,7 +102,6 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
   } catch (error: any) {
     console.error("Erro crítico no serviço de IA:", error);
     
-    // Se for um erro já tratado por nós, repassa a mensagem
     if (error instanceof Error) {
       throw error;
     }
