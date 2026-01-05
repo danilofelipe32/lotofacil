@@ -32,13 +32,27 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
       body: JSON.stringify({ message: prompt })
     });
 
+    // Tratamento detalhado de erros HTTP
     if (!response.ok) {
-      throw new Error(`Erro na APIFreeLLM: ${response.status} ${response.statusText}`);
+      if (response.status === 429) {
+        throw new Error("Limite de requisições excedido (Rate Limit). Por favor, aguarde alguns instantes antes de tentar novamente.");
+      }
+      if (response.status >= 500) {
+        throw new Error("O servidor de IA está enfrentando instabilidades temporárias (Erro 5xx). Tente novamente em alguns minutos.");
+      }
+      if (response.status === 403 || response.status === 401) {
+        throw new Error("Acesso negado pelo firewall ou autenticação. A API pode estar protegida contra bots.");
+      }
+      if (response.status === 404) {
+        throw new Error("Serviço de IA temporariamente indisponível (Endpoint não encontrado).");
+      }
+      throw new Error(`Falha na comunicação com a IA: Status ${response.status} (${response.statusText})`);
     }
 
     const data = await response.json();
@@ -46,18 +60,23 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
     const rawContent = data.response || data.message || "";
     
     if (!rawContent) {
-      throw new Error("Resposta vazia recebida do servidor de IA.");
+      throw new Error("A IA respondeu com sucesso, mas o conteúdo do palpite veio vazio.");
     }
 
     // Extração robusta de JSON do corpo da resposta (limpa markdown e textos extras)
     const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("A IA não retornou um formato de dados válido.");
+      throw new Error("O motor de IA não conseguiu estruturar os dados do palpite corretamente. Tente gerar novamente.");
     }
 
-    const result = JSON.parse(jsonMatch[0]);
+    let result;
+    try {
+      result = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      throw new Error("Erro ao interpretar os dados gerados pela IA. Formato incompatível.");
+    }
 
-    // --- VALIDAÇÕES ---
+    // --- VALIDAÇÕES DE INTEGRIDADE ---
     
     const rawNumbers: any[] = Array.isArray(result.numbers) ? result.numbers : [];
     const processedNumbers: number[] = [...new Set(rawNumbers.map(n => Number(n)))]
@@ -65,11 +84,11 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
       .sort((a: number, b: number) => a - b);
 
     if (processedNumbers.length !== 15) {
-      throw new Error(`O motor gerou ${processedNumbers.length} dezenas, mas são necessárias exatamente 15.`);
+      throw new Error(`A análise gerou um conjunto de ${processedNumbers.length} dezenas, o que é inválido para a Lotofácil.`);
     }
 
-    if (typeof result.reasoning !== 'string' || result.reasoning.length < 5) {
-      throw new Error("Justificativa técnica inválida ou ausente.");
+    if (typeof result.reasoning !== 'string' || result.reasoning.trim().length < 5) {
+      throw new Error("A IA não forneceu uma justificativa técnica válida para o palpite.");
     }
 
     return {
@@ -79,7 +98,13 @@ export const getSmartPrediction = async (stats: Statistics, recentGames: number[
     };
 
   } catch (error: any) {
-    console.error("Erro no Processamento AI (APIFreeLLM):", error);
-    throw new Error(error.message || "Falha na comunicação com o motor de inteligência.");
+    console.error("Erro crítico no serviço de IA:", error);
+    
+    // Se for um erro já tratado por nós, repassa a mensagem
+    if (error instanceof Error) {
+      throw error;
+    }
+    
+    throw new Error("Ocorreu um erro inesperado ao processar o palpite inteligente.");
   }
 };

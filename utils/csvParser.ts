@@ -31,22 +31,36 @@ export const parseLotofacilCSV = (csvText: string): Promise<LotofacilDraw[]> => 
           // Suporta tanto ponto-e-vírgula quanto vírgula
           const columns = line.split(/[;,]/);
           
-          // Lógica assume: Concurso, Data, Bola1...Bola15
-          if (columns.length >= 17) {
-            const numbers = [];
-            // Parse otimizado das 15 dezenas
-            for (let j = 2; j < 17; j++) {
-              const val = parseInt(columns[j]);
-              if (!isNaN(val)) numbers.push(val);
+          // Validação: Lógica assume Concurso, Data, e exatamente 15 bolas (mínimo 17 colunas)
+          if (columns.length < 17) {
+            console.warn(\`Linha \${i + 1} ignorada: número insuficiente de colunas (\${columns.length}/17 esperado).\`);
+            continue;
+          }
+
+          const numbers = [];
+          // Parse otimizado das 15 dezenas (colunas 2 a 16)
+          for (let j = 2; j < 17; j++) {
+            const val = parseInt(columns[j]);
+            if (!isNaN(val)) {
+              numbers.push(val);
+            }
+          }
+
+          // Validação final da linha antes de adicionar aos resultados
+          if (numbers.length === 15) {
+            const concurso = parseInt(columns[0]);
+            if (isNaN(concurso)) {
+              console.warn(\`Linha \${i + 1} ignorada: número do concurso inválido.\`);
+              continue;
             }
 
-            if (numbers.length === 15) {
-              results.push({
-                concurso: parseInt(columns[0]),
-                data: columns[1],
-                numbers: numbers.sort((a, b) => a - b)
-              });
-            }
+            results.push({
+              concurso: concurso,
+              data: columns[1] || '00/00/0000',
+              numbers: numbers.sort((a, b) => a - b)
+            });
+          } else {
+            console.warn(\`Linha \${i + 1} ignorada: apenas \${numbers.length} dezenas válidas encontradas.\`);
           }
         }
         

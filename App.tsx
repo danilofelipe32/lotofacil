@@ -82,11 +82,26 @@ const App: React.FC = () => {
     } finally { setLoading(false); }
   };
 
+  const parsedSearchNumbers = useMemo(() => {
+    return searchQuery
+      .split(/[\s,]+/)
+      .map(n => parseInt(n))
+      .filter(n => !isNaN(n) && n >= 1 && n <= 25);
+  }, [searchQuery]);
+
   const filteredSaved = useMemo(() => {
-    if (!searchQuery) return savedPredictions;
-    const q = searchQuery.split(/[\s,]+/).map(n => parseInt(n)).filter(n => !isNaN(n));
-    return savedPredictions.filter(p => q.every(qn => p.numbers.includes(qn)));
-  }, [savedPredictions, searchQuery]);
+    if (parsedSearchNumbers.length === 0) {
+      return savedPredictions.map(p => ({ ...p, matchCount: 0 }));
+    }
+
+    return savedPredictions
+      .map(p => {
+        const matches = p.numbers.filter(n => parsedSearchNumbers.includes(n)).length;
+        return { ...p, matchCount: matches };
+      })
+      .filter(p => p.matchCount > 0)
+      .sort((a, b) => b.matchCount - a.matchCount);
+  }, [savedPredictions, parsedSearchNumbers]);
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-20">
@@ -189,40 +204,68 @@ const App: React.FC = () => {
 
               {/* Saved Section */}
               <section className="bg-slate-900/30 rounded-3xl p-6 border border-slate-800/50">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xs font-black uppercase text-slate-500 flex items-center gap-2">
-                    <i className="fa-solid fa-folder-open text-indigo-400"></i>
-                    Palpites Arquivados
-                  </h3>
-                  <input 
-                    type="text" 
-                    placeholder="Filtrar jogo..." 
-                    className="bg-slate-800 border-none rounded-lg px-3 py-1.5 text-[10px] w-40 focus:ring-1 focus:ring-emerald-500"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                  />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                  <div className="space-y-1">
+                    <h3 className="text-xs font-black uppercase text-slate-500 flex items-center gap-2">
+                      <i className="fa-solid fa-folder-open text-indigo-400"></i>
+                      Palpites Arquivados
+                    </h3>
+                    <p className="text-[9px] text-slate-600 font-bold uppercase">Priorizando por relevância na busca</p>
+                  </div>
+                  <div className="relative group">
+                    <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] group-focus-within:text-emerald-400 transition-colors"></i>
+                    <input 
+                      type="text" 
+                      placeholder="Pesquisar por dezenas (ex: 01 07 22)..." 
+                      className="bg-slate-800 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-[10px] w-full sm:w-64 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder:text-slate-600 text-slate-200"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                    />
+                  </div>
                 </div>
+
                 <div className="space-y-3">
-                  {filteredSaved.map(p => (
-                    <div key={p.id} className="bg-slate-800/20 border border-slate-800/50 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {p.numbers.map(n => (
-                          <span key={n} className="w-7 h-7 flex items-center justify-center rounded bg-slate-700/50 text-emerald-400 text-[10px] font-bold border border-emerald-500/10">
-                            {n.toString().padStart(2, '0')}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-4 border-l border-slate-800 pl-4">
-                        <div className="text-right">
-                          <div className="text-[9px] font-bold text-slate-500">{new Date(p.timestamp).toLocaleDateString()}</div>
-                          <div className="text-[10px] font-black text-emerald-400 uppercase">{(p.confidence * 100).toFixed(0)}% Conf.</div>
-                        </div>
-                        <button onClick={() => setSavedPredictions(prev => prev.filter(x => x.id !== p.id))} className="text-slate-600 hover:text-red-400 transition-colors">
-                          <i className="fa-solid fa-trash-can"></i>
-                        </button>
-                      </div>
+                  {filteredSaved.length === 0 ? (
+                    <div className="py-12 text-center border border-dashed border-slate-800 rounded-2xl">
+                      <i className="fa-solid fa-filter-circle-xmark text-slate-700 text-2xl mb-2"></i>
+                      <p className="text-slate-500 text-[10px] font-bold uppercase">Nenhum palpite contém as dezenas pesquisadas.</p>
                     </div>
-                  ))}
+                  ) : (
+                    filteredSaved.map(p => (
+                      <div key={p.id} className="bg-slate-800/20 border border-slate-800/50 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 transition-all hover:bg-slate-800/30">
+                        <div className="flex flex-wrap gap-1.5 flex-1 min-w-[280px]">
+                          {p.numbers.map(n => {
+                            const isMatched = parsedSearchNumbers.includes(n);
+                            return (
+                              <span 
+                                key={n} 
+                                className={`w-7 h-7 flex items-center justify-center rounded text-[10px] font-bold transition-all
+                                  ${isMatched 
+                                    ? 'bg-emerald-500/30 text-emerald-400 border border-emerald-500/60 shadow-[0_0_10px_rgba(16,185,129,0.3)] scale-110 z-10' 
+                                    : 'bg-slate-700/50 text-slate-400 border border-slate-700'}`}
+                              >
+                                {n.toString().padStart(2, '0')}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center gap-4 border-l border-slate-800 pl-4">
+                          <div className="text-right flex flex-col gap-1 items-end">
+                            {p.matchCount > 0 && (
+                              <div className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase animate-in fade-in zoom-in duration-300">
+                                {p.matchCount} {p.matchCount === 1 ? 'acerto' : 'acertos'}
+                              </div>
+                            )}
+                            <div className="text-[9px] font-bold text-slate-500">{new Date(p.timestamp).toLocaleDateString()}</div>
+                            <div className="text-[10px] font-black text-emerald-400 uppercase">{(p.confidence * 100).toFixed(0)}% Conf.</div>
+                          </div>
+                          <button onClick={() => setSavedPredictions(prev => prev.filter(x => x.id !== p.id))} className="text-slate-600 hover:text-red-400 transition-colors p-2">
+                            <i className="fa-solid fa-trash-can"></i>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </section>
             </div>
