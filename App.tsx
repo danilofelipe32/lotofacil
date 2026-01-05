@@ -128,7 +128,7 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 space-y-8">
               {/* Stats Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-9 gap-3">
                 {[
                   { l: 'Base Histórica', v: draws.length, i: 'fa-history', c: 'text-blue-400' },
                   { l: 'Média Soma', v: stats?.sumAvg.toFixed(0) || 0, i: 'fa-calculator', c: 'text-emerald-400' },
@@ -154,6 +154,13 @@ const App: React.FC = () => {
                     t: 'Indica a variação das somas em relação à média. Valores baixos indicam maior estabilidade.'
                   },
                   { 
+                    l: 'Probabilidade', 
+                    v: '1 em 3.26M', 
+                    i: 'fa-percent', 
+                    c: 'text-amber-500',
+                    t: 'Probabilidade teórica de acertar 15 números com uma aposta simples de 15 dezenas. Cálculo: C(25,15) = 25! / (15! * 10!) = 3.268.760 combinações únicas.'
+                  },
+                  { 
                     l: 'Média Repetidos', 
                     v: avgRepeats.toFixed(1), 
                     i: 'fa-rotate-right', 
@@ -168,7 +175,7 @@ const App: React.FC = () => {
                       <i className={`fa-solid ${s.i} ${s.c} text-[10px] mb-2`}></i>
                       {s.t && <InfoTooltip text={s.t} />}
                     </div>
-                    <div className="text-lg font-black text-white truncate">{s.v}</div>
+                    <div className="text-sm font-black text-white truncate">{s.v}</div>
                     <div className="text-[7px] uppercase font-bold text-slate-500 mt-1 leading-tight">{s.l}</div>
                   </div>
                 ))}
