@@ -1,0 +1,5 @@
+{
+  "name": "LotoExpert AI - Analisador de Lotofácil",
+  "description": "Uma aplicação avançada para análise estatística de resultados da Lotofácil, permitindo o upload de arquivos CSV para identificar padrões e gerar palpites inteligentes usando Inteligência Artificial Gemini.",
+  "requestFramePermissions": []
+}
