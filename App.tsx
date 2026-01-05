@@ -45,6 +45,12 @@ const App: React.FC = () => {
     return calculateStatistics(draws);
   }, [draws]);
 
+  const avgRepeats = useMemo(() => {
+    if (!stats || stats.repeatsFromPrevious.length === 0) return 0;
+    const sum = stats.repeatsFromPrevious.reduce((a, b) => a + b, 0);
+    return sum / stats.repeatsFromPrevious.length;
+  }, [stats]);
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -122,27 +128,48 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 space-y-8">
               {/* Stats Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
                 {[
                   { l: 'Base Histórica', v: draws.length, i: 'fa-history', c: 'text-blue-400' },
                   { l: 'Média Soma', v: stats?.sumAvg.toFixed(0) || 0, i: 'fa-calculator', c: 'text-emerald-400' },
+                  { 
+                    l: 'Mediana Soma', 
+                    v: stats?.sumMedian.toFixed(0) || 0, 
+                    i: 'fa-arrows-left-right-to-line', 
+                    c: 'text-cyan-400',
+                    t: 'O valor central que divide a metade superior e inferior das somas. Menos sensível a valores extremos.'
+                  },
+                  { 
+                    l: 'Moda Soma', 
+                    v: stats?.sumMode?.slice(0, 1).join(', ') || '-', 
+                    i: 'fa-star', 
+                    c: 'text-purple-400',
+                    t: 'A soma que ocorre com maior frequência nos sorteios.'
+                  },
                   { 
                     l: 'Desvio Padrão', 
                     v: stats?.sumStdDev.toFixed(1) || 0, 
                     i: 'fa-wave-square', 
                     c: 'text-rose-400',
-                    t: 'Indica a variação das somas em relação à média. Um desvio baixo sugere que a maioria dos jogos somam valores próximos à média (estabilidade).'
+                    t: 'Indica a variação das somas em relação à média. Valores baixos indicam maior estabilidade.'
+                  },
+                  { 
+                    l: 'Média Repetidos', 
+                    v: avgRepeats.toFixed(1), 
+                    i: 'fa-rotate-right', 
+                    c: 'text-orange-400',
+                    t: 'Média de dezenas que se repetem de um concurso para o outro. O padrão estatístico mais comum na Lotofácil é repetir de 8 a 10 dezenas.'
                   },
                   { l: 'Pares (Avg)', v: stats?.parity.even.toFixed(1) || 0, i: 'fa-equals', c: 'text-amber-400' },
                   { l: 'Ímpares (Avg)', v: stats?.parity.odd.toFixed(1) || 0, i: 'fa-not-equal', c: 'text-indigo-400' }
                 ].map((s, idx) => (
-                  <div key={idx} className="bg-slate-800/40 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between relative">
+                  <div key={idx} className="bg-slate-800/40 p-3 rounded-2xl border border-slate-800 flex flex-col justify-between relative min-h-[100px]">
                     <div className="flex items-start justify-between">
-                      <i className={`fa-solid ${s.i} ${s.c} text-xs mb-3`}></i>
+                      <i className={`fa-solid ${s.i} ${s.c} text-[10px] mb-2`}></i>
                       {s.t && <InfoTooltip text={s.t} />}
                     </div>
-                    <div className="text-2xl font-black text-white">{s.v}</div>
-                    <div className="text-[9px] uppercase font-bold text-slate-500 mt-1">{s.l}</div>
+                    <div className="text-lg font-black text-white truncate">{s.v}</div>
+                    <div className="text-[7px] uppercase font-bold text-slate-500 mt-1 leading-tight">{s.l}</div>
                   </div>
                 ))}
               </div>
