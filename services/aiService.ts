@@ -28,26 +28,30 @@ REGRAS OBRIGATÓRIAS:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        // User-Agent realista para evitar bloqueio 403 do Cloudflare conforme documentação
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'Accept': 'application/json'
+        // NOTA: User-Agent não é definido manualmente no browser (é um header restrito).
+        // O navegador enviará automaticamente um User-Agent válido.
       },
       body: JSON.stringify({
         message: prompt
       })
     });
 
+    if (!response.ok) {
+      throw new Error(`Erro na API (${response.status}). Tente novamente em instantes.`);
+    }
+
     const data = await response.json();
 
     if (data.status === 'error') {
       if (data.error?.includes('Rate limit')) {
-        throw new Error("Limite de requisições atingido. Aguarde 5 segundos antes de tentar novamente.");
+        throw new Error("Aguarde 5 segundos para gerar um novo palpite (limite da API Free).");
       }
-      throw new Error(data.error || "Erro desconhecido na API Free LLM.");
+      throw new Error(data.error || "Erro na comunicação com a IA.");
     }
 
     if (!data.response) {
-      throw new Error("A IA retornou uma resposta vazia.");
+      throw new Error("A IA não retornou uma resposta válida.");
     }
 
     let cleanText = data.response.trim();
@@ -59,7 +63,7 @@ REGRAS OBRIGATÓRIAS:
     const endIdx = cleanText.lastIndexOf('}');
     
     if (startIdx === -1 || endIdx === -1) {
-      throw new Error("A resposta da IA não contém um formato de dados válido.");
+      throw new Error("A resposta da IA não está no formato esperado.");
     }
 
     const jsonStr = cleanText.substring(startIdx, endIdx + 1);
@@ -72,18 +76,18 @@ REGRAS OBRIGATÓRIAS:
       .sort((a, b) => a - b);
 
     if (uniqueNumbers.length !== 15) {
-      throw new Error("A IA gerou uma combinação inválida (quantidade incorreta de números).");
+      throw new Error("IA gerou quantidade incorreta de números. Tente novamente.");
     }
 
     return {
       numbers: uniqueNumbers,
-      reasoning: result.reasoning || "Palpite equilibrado baseado em tendências históricas.",
+      reasoning: result.reasoning || "Análise baseada em padrões de paridade e soma média.",
       confidence: typeof result.confidence === 'number' ? result.confidence : 0.8
     };
   } catch (error: any) {
     console.error("Erro no serviço de IA:", error);
     if (error instanceof SyntaxError) {
-      throw new Error("Erro de processamento: A IA não respondeu no formato esperado. Tente novamente.");
+      throw new Error("Erro de processamento nos dados da IA. Tente novamente.");
     }
     throw error;
   }
