@@ -1,84 +1,60 @@
 
+import { GoogleGenAI, Type } from "@google/genai";
 import { Statistics, PredictionResult } from "../types";
 
 /**
- * Serviço que utiliza a APIFreeLLM para gerar palpites baseados em análise estatística profunda.
- * A API requer headers específicos e o corpo da mensagem em formato JSON.
+ * Serviço que utiliza o Google Gemini API para gerar palpites baseados em análise estatística profunda.
  */
 export const getSmartPrediction = async (stats: Statistics, recentGames: number[][]): Promise<PredictionResult> => {
-  // Prepara as 10 dezenas mais frequentes para o prompt
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  // Prepara as 10 dezenas mais frequentes para o contexto da IA
   const freqSorted = Object.entries(stats.frequency)
     .map(([num, count]) => ({ n: parseInt(num), c: count }))
     .sort((a, b) => b.c - a.c)
     .slice(0, 10);
 
-  // Constrói um prompt rico em dados estatísticos
-  const prompt = `Atue como um analista estatístico especialista em Lotofácil.
-DADOS DO HISTÓRICO:
-- Dezenas mais frequentes: ${freqSorted.map(f => f.n).join(', ')}
-- Equilíbrio Par/Ímpar (Média): ${stats.parity.even.toFixed(1)} pares / ${stats.parity.odd.toFixed(1)} ímpares
-- Soma Média dos jogos: ${stats.sumAvg.toFixed(1)}
-- Desvio Padrão das somas: ${stats.sumStdDev.toFixed(1)}
-- Últimos 2 jogos realizados: ${JSON.stringify(recentGames.slice(-2))}
+  const prompt = `Atue como um analista estatístico especialista em Lotofácil. 
+  Gere um palpite de 15 números (1-25) baseado nestes padrões históricos:
+  - Frequentes: ${freqSorted.map(f => f.n).join(', ')}
+  - Paridade Média: ${stats.parity.even.toFixed(1)} pares / ${stats.parity.odd.toFixed(1)} ímpares
+  - Soma Média: ${stats.sumAvg.toFixed(1)} (Desvio Padrão: ${stats.sumStdDev.toFixed(1)})
+  - Repetição Média: Aproximadamente 9 números do concurso anterior.
+  - Últimos sorteios para referência: ${JSON.stringify(recentGames.slice(-2))}
 
-OBJETIVO:
-Gere um palpite de 15 números (1 a 25) que respeite a tendência de soma média e o equilíbrio de paridade encontrado no histórico.
-
-REGRAS DE RESPOSTA:
-1. Retorne EXCLUSIVAMENTE um objeto JSON.
-2. Formato do JSON: {"numbers": [15 números únicos ordenados], "reasoning": "Breve explicação técnica", "confidence": 0.0 a 1.0}
-3. Não use blocos de código markdown na resposta final se possível, mas se usar, garanta que seja um JSON válido.`;
+  O palpite deve ser tecnicamente fundamentado para maximizar a probabilidade estatística.`;
 
   try {
-    const response = await fetch('https://apifreellm.com/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        message: prompt
-      })
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            numbers: {
+              type: Type.ARRAY,
+              items: { type: Type.INTEGER },
+              description: "Exatamente 15 números únicos entre 1 e 25, ordenados de forma crescente."
+            },
+            reasoning: {
+              type: Type.STRING,
+              description: "Explicação sucinta da lógica estatística aplicada."
+            },
+            confidence: {
+              type: Type.NUMBER,
+              description: "Nível de confiança na predição (0.0 a 1.0)."
+            }
+          },
+          required: ["numbers", "reasoning", "confidence"]
+        }
+      }
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw new Error("Muitas requisições. Aguarde 5 a 10 segundos antes de tentar novamente.");
-      }
-      throw new Error(`Erro na conexão com o servidor de IA (${response.status}).`);
-    }
+    const result = JSON.parse(response.text || "{}");
 
-    const data = await response.json();
-
-    if (data.status === 'error') {
-      throw new Error(data.error || "Falha na resposta da API.");
-    }
-
-    if (!data.response) {
-      throw new Error("A IA não retornou um palpite válido.");
-    }
-
-    // Limpeza da resposta para garantir extração do JSON
-    let cleanText = data.response.trim();
-    
-    // Remove blocos de código Markdown se existirem
-    if (cleanText.includes('```')) {
-      cleanText = cleanText.replace(/```json|```/g, '').trim();
-    }
-    
-    // Localiza o início e fim do objeto JSON
-    const startIdx = cleanText.indexOf('{');
-    const endIdx = cleanText.lastIndexOf('}');
-    
-    if (startIdx === -1 || endIdx === -1) {
-      console.error("Texto recebido da IA:", cleanText);
-      throw new Error("O motor de IA retornou um formato ilegível. Tente novamente.");
-    }
-
-    const jsonStr = cleanText.substring(startIdx, endIdx + 1);
-    const result = JSON.parse(jsonStr);
-
-    // Validação das dezenas geradas
+    // Validação e limpeza dos dados retornados
     const rawNumbers = Array.isArray(result.numbers) ? result.numbers : [];
     const uniqueNumbers = [...new Set(rawNumbers)]
       .map(n => Number(n))
@@ -86,20 +62,18 @@ REGRAS DE RESPOSTA:
       .sort((a, b) => a - b);
 
     if (uniqueNumbers.length !== 15) {
-      throw new Error("A IA gerou uma quantidade inválida de dezenas. Por favor, tente processar novamente.");
+      // Fallback estatístico simples em caso de erro da IA
+      throw new Error("A IA gerou uma sequência inválida. Tente processar novamente.");
     }
 
     return {
       numbers: uniqueNumbers,
-      reasoning: result.reasoning || "Análise baseada em convergência estatística e tendências de paridade.",
-      confidence: typeof result.confidence === 'number' ? result.confidence : 0.85
+      reasoning: result.reasoning || "Análise baseada em convergência de frequência e paridade histórica.",
+      confidence: result.confidence || 0.85
     };
 
   } catch (error: any) {
     console.error("LotoExpert AI Error:", error);
-    if (error instanceof SyntaxError) {
-      throw new Error("Erro de processamento: A IA retornou dados malformados. Tente novamente.");
-    }
-    throw error;
+    throw new Error("Não foi possível conectar ao motor de IA. Verifique sua conexão ou tente novamente.");
   }
 };
