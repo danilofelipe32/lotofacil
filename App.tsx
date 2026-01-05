@@ -18,7 +18,11 @@ const App: React.FC = () => {
   const [savedPredictions, setSavedPredictions] = useState<SavedPrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Estados para busca com Debounce
+  const [inputValue, setInputValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -31,6 +35,15 @@ const App: React.FC = () => {
       console.error("Erro ao carregar cache:", e);
     }
   }, []);
+
+  // Efeito de Debounce: Atualiza o searchQuery 300ms após a última digitação
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setSearchQuery(inputValue);
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [inputValue]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_PREDICTIONS, JSON.stringify(savedPredictions));
@@ -218,9 +231,14 @@ const App: React.FC = () => {
                       type="text" 
                       placeholder="Pesquisar por dezenas (ex: 01 07 22)..." 
                       className="bg-slate-800 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-[10px] w-full sm:w-64 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder:text-slate-600 text-slate-200"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
+                      value={inputValue}
+                      onChange={e => setInputValue(e.target.value)}
                     />
+                    {inputValue !== searchQuery && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <i className="fa-solid fa-circle-notch animate-spin text-slate-600 text-[10px]"></i>
+                      </div>
+                    )}
                   </div>
                 </div>
 
